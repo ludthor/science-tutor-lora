@@ -11,7 +11,35 @@
 
 The full dataset contains 21,208 multiple-choice questions across natural,
 language, and social science, with answer, lecture, and solution annotations.
-The size of our eligible subset is unknown until the audit runs.
+The final eligible subset size is unknown until the full audit runs.
+
+## Initial source inspection — 2026-10-16
+
+The pinned `problems.json` file is 31,529,211 bytes. Its observed SHA-256 is
+`4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7`.
+The JSON root maps string record IDs to question records. Answers are zero-based
+indices into `choices`; upstream calls the validation split `val`.
+
+| Split | Full source | Natural science with `image = null` |
+| --- | ---: | ---: |
+| train | 12,726 | 3,037 |
+| val | 4,241 | 1,075 |
+| test | 4,241 | 1,043 |
+| Total | 21,208 | 5,155 |
+
+Among these 5,155 candidates, 1,098 have empty `solution` strings and 1,753 have
+empty `hint` strings. No empty questions or invalid answer indices were found
+in this initial inspection. These are descriptive checks, not full schema or
+scientific-quality validation.
+
+Empty hints are allowed because context is optional. Records without reference
+solutions need an explicit eligibility decision before explanation training.
+An absent image alone does not establish that a question is answerable from text:
+diagram references, duplicates, and other quality checks remain pending.
+
+The downloaded source and its local `source.json` provenance record are stored
+under `data/raw/scienceqa/<revision>/`, which is ignored by Git. The observed
+checksum records what was downloaded; automated integrity checks are a later step.
 
 ## Planned selection and audit
 
