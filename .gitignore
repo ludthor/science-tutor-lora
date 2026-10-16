@@ -1,0 +1,29 @@
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.ipynb_checkpoints/
+.DS_Store
+
+# Credentials and generated experiment artifacts
+.env
+.env.*
+!.env.example
+data/
+outputs/
+checkpoints/
+adapters/
+wandb/
+*.safetensors
+*.pt
+*.pth
+*.bin
