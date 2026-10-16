@@ -11,10 +11,10 @@ The first experiment uses SmolLM2-1.7B-Instruct and a text-only, natural-science
 subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
-**Status:** project foundation. Configuration validation, runtime inspection,
-tests, CI, and a Colab setup notebook are available. Dataset preparation,
-training, inference, and evaluation are planned. No model has been trained and
-no performance results are claimed.
+**Status:** data audit in progress. Configuration validation, verified ScienceQA
+download/cache reuse, schema validation, runtime inspection, tests, CI, and a
+Colab setup notebook are available. Dataset filtering, training, inference, and evaluation are planned.
+No model has been trained and no performance results are claimed.
 
 ## Quick start
 
@@ -64,6 +64,27 @@ examples, and 20 optimizer steps. These are proposed limits, not measurements.
 Local development targets a MacBook Air M4 with 24 GB unified memory. Optional
 MLX training is deferred until the CUDA experiment works. Backend-specific model
 loading will stay separate from dataset preparation and evaluation.
+
+## Fetch and inspect the source
+
+Download the pinned file, or verify and reuse the local cache:
+
+```bash
+uv run science-tutor fetch-data configs/smoke.toml
+uv run science-tutor inspect-data \
+  data/raw/scienceqa/2cbf8318e07b9ece895bb2ae605e71e38d623264/problems.json
+```
+
+`fetch-data` checks the SHA-256 in the experiment configuration on every run.
+Fresh downloads are verified before being saved; an existing corrupt cache is
+rejected and left unchanged. Provenance is recorded in the ignored
+`data/raw/scienceqa/<revision>/source.json`. Use `--data-dir <directory>` to
+choose a different cache root. See [data notes](docs/data.md) for error recovery.
+
+`inspect-data` validates the source schema and prints record and split counts.
+It preserves upstream IDs and text, and fails on malformed records or duplicate
+JSON keys. Empty reference explanations remain valid source records. Neither
+command filters or samples data yet.
 
 ## Experiment milestones
 
