@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 PositiveInt = Annotated[int, Field(gt=0)]
 CommitRevision = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+Sha256Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 class Settings(BaseModel):
@@ -28,6 +29,7 @@ class DatasetSettings(Settings):
 
     repository: Literal["lupantech/ScienceQA"]
     revision: CommitRevision
+    sha256: Sha256Digest
     subject: Literal["natural science"]
     max_train_examples: PositiveInt
     max_validation_examples: PositiveInt

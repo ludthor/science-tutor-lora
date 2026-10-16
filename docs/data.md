@@ -38,8 +38,45 @@ An absent image alone does not establish that a question is answerable from text
 diagram references, duplicates, and other quality checks remain pending.
 
 The downloaded source and its local `source.json` provenance record are stored
-under `data/raw/scienceqa/<revision>/`, which is ignored by Git. The observed
-checksum records what was downloaded; automated integrity checks are a later step.
+under `data/raw/scienceqa/<revision>/`, which is ignored by Git. This observed
+checksum is now pinned in `configs/smoke.toml` for automated integrity checks.
+
+## Verified download and cache reuse
+
+Run from the repository root:
+
+```bash
+uv run science-tutor fetch-data configs/smoke.toml
+```
+
+The command uses `dataset.repository`, `dataset.revision`, and `dataset.sha256`
+from the validated configuration. It returns JSON containing `path`, `sha256`,
+`bytes`, and `cached`. A first successful fetch reports `cached: false`; subsequent
+runs rehash the existing file and report `cached: true`, without a network call.
+This verifies equality with the bytes observed during the initial source
+inspection, not the dataset's scientific correctness or a publisher signature.
+
+Downloads use HTTPS with a 30-second socket timeout, stream in chunks, and stop
+after 50 MiB. A temporary file in the destination directory is verified before
+atomic replacement of `problems.json`. Ordinary transfer failures, checksum
+mismatches, and oversized responses clean up that temporary file. A killed
+process may leave an ignored temporary file, but it will not be treated as the
+cached source. The cache targets local, single-process use.
+
+An existing cache with the wrong checksum fails explicitly and is left unchanged.
+Inspect the reported path and remove that corrupt file before retrying, or use
+`--data-dir <another-directory>` for a fresh download. Network and integrity
+failures return exit code 2 from the CLI; retry the same command after resolving
+the reported problem.
+
+The sibling `source.json` manifest records the repository, revision, URL,
+SHA-256, and byte count. Its contents are regenerated atomically from verified
+bytes on each successful invocation. Verification uses the configured digest,
+not a checksum supplied by that manifest. If writing provenance fails after a
+verified download, the valid source remains reusable on the next invocation.
+
+Downloading and schema validation are separate steps. Run `inspect-data` after
+`fetch-data`; a matching checksum alone does not validate record structure.
 
 ## Local source validation
 
@@ -72,13 +109,13 @@ uv run science-tutor inspect-data \
 ```
 
 The pinned file passes this schema: 21,208 records, with 12,726 `train`, 4,241
-`val`, and 4,241 `test` records. This is structural validation only. Source
-integrity verification, eligibility filtering, duplicate-question analysis,
-scientific-quality review, and deterministic sampling remain pending.
+`val`, and 4,241 `test` records. This is structural validation only. Eligibility
+filtering, duplicate-question analysis, scientific-quality review, and
+deterministic sampling remain pending.
 
 ## Planned selection and audit
 
-1. Download from the pinned revision and record a content checksum.
+1. Download from the pinned revision, verify the configured checksum, and record provenance.
 2. Keep natural-science records with no image. Inspect references to absent
    diagrams, malformed choices, and missing explanations; record all exclusions.
 3. Preserve upstream record IDs and train/validation/test assignments.

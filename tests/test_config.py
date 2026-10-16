@@ -15,6 +15,7 @@ def test_smoke_config_pins_model_and_dataset() -> None:
 
     assert config.model.model_id == "HuggingFaceTB/SmolLM2-1.7B-Instruct"
     assert len(config.model.revision) == len(config.dataset.revision) == 40
+    assert len(config.dataset.sha256) == 64
     assert config.dataset.max_train_examples == 500
     assert config.training.max_steps == 20
 
@@ -39,6 +40,8 @@ def test_smoke_config_pins_model_and_dataset() -> None:
         ('name = "scienceqa-smoke"', 'name = "scienceqa-smoke"\nunknown = 1'),
         ("31b70e2e869a7173562077fd711b654946d38674", "main"),
         ("2cbf8318e07b9ece895bb2ae605e71e38d623264", "main"),
+        ("4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7", "invalid"),
+        ("4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7", "a" * 63),
     ],
 )
 def test_rejects_invalid_settings(tmp_path: Path, original: str, replacement: str) -> None:
