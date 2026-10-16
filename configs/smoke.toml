@@ -1,0 +1,27 @@
+# Validates the planned first run. Training is implemented in a later milestone.
+schema_version = 1
+name = "scienceqa-smoke"
+seed = 42
+
+[model]
+model_id = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+revision = "31b70e2e869a7173562077fd711b654946d38674"
+
+[dataset]
+repository = "lupantech/ScienceQA"
+revision = "2cbf8318e07b9ece895bb2ae605e71e38d623264"
+subject = "natural science"
+max_train_examples = 500
+max_validation_examples = 100
+
+[lora]
+rank = 8
+alpha = 16
+dropout = 0.05
+
+[training]
+max_sequence_length = 512
+batch_size = 1
+gradient_accumulation_steps = 8
+learning_rate = 0.0002
+max_steps = 20
