@@ -5,6 +5,7 @@ import json
 import platform
 import sys
 import tomllib
+from collections import Counter
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from science_tutor.config import load_config
+from science_tutor.data import DatasetValidationError, load_scienceqa
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -25,6 +27,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     validate = commands.add_parser("validate", help="Validate a TOML experiment configuration.")
     validate.add_argument("config", type=Path)
     commands.add_parser("doctor", help="Print local runtime metadata without loading a model.")
+    inspect = commands.add_parser("inspect-data", help="Validate a local ScienceQA JSON file.")
+    inspect.add_argument("source", type=Path)
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -39,6 +43,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "accelerator": "not probed; training dependencies are not installed by default",
                 },
                 indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "inspect-data":
+        try:
+            records = load_scienceqa(args.source)
+        except (OSError, DatasetValidationError) as exc:
+            print(f"Invalid dataset: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "records": len(records),
+                    "splits": dict(Counter(record.split for record in records.values())),
+                },
+                indent=2,
+                sort_keys=True,
             )
         )
         return 0

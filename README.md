@@ -11,10 +11,10 @@ The first experiment uses SmolLM2-1.7B-Instruct and a text-only, natural-science
 subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
-**Status:** project foundation. Configuration validation, runtime inspection,
-tests, CI, and a Colab setup notebook are available. Dataset preparation,
-training, inference, and evaluation are planned. No model has been trained and
-no performance results are claimed.
+**Status:** data audit in progress. Configuration validation, local ScienceQA
+schema validation, runtime inspection, tests, CI, and a Colab setup notebook are
+available. Dataset filtering, training, inference, and evaluation are planned.
+No model has been trained and no performance results are claimed.
 
 ## Quick start
 
@@ -64,6 +64,20 @@ examples, and 20 optimizer steps. These are proposed limits, not measurements.
 Local development targets a MacBook Air M4 with 24 GB unified memory. Optional
 MLX training is deferred until the CUDA experiment works. Backend-specific model
 loading will stay separate from dataset preparation and evaluation.
+
+## Inspect a local source file
+
+After obtaining the pinned ScienceQA JSON described in the [data notes](docs/data.md), run:
+
+```bash
+uv run science-tutor inspect-data \
+  data/raw/scienceqa/2cbf8318e07b9ece895bb2ae605e71e38d623264/problems.json
+```
+
+This validates the source schema and prints the full record count and split
+counts. It preserves upstream IDs and text, and fails on malformed records or
+duplicate JSON keys. Empty reference explanations remain valid source records.
+The command does not download, verify checksums, filter, or sample data yet.
 
 ## Experiment milestones
 

@@ -36,3 +36,26 @@ def test_doctor_prints_runtime_metadata(capsys: pytest.CaptureFixture[str]) -> N
     metadata = json.loads(capsys.readouterr().out)
     assert metadata["python"]
     assert metadata["system"]
+
+
+def test_inspect_data_prints_counts(
+    scienceqa_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["inspect-data", str(scienceqa_file)]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"records": 2, "splits": {"train": 1, "val": 1}}
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("contents", [None, b"{", b"[]", b"\xff"])
+def test_inspect_data_reports_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], contents: bytes | None
+) -> None:
+    path = tmp_path / "invalid.json"
+    if contents is not None:
+        path.write_bytes(contents)
+
+    assert main(["inspect-data", str(path)]) == 2
+    captured = capsys.readouterr()
+    assert "Invalid dataset" in captured.err
+    assert captured.out == ""

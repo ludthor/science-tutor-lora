@@ -41,6 +41,41 @@ The downloaded source and its local `source.json` provenance record are stored
 under `data/raw/scienceqa/<revision>/`, which is ignored by Git. The observed
 checksum records what was downloaded; automated integrity checks are a later step.
 
+## Local source validation
+
+The `ScienceQARecord` schema and `load_scienceqa(path)` loader live in
+`src/science_tutor/data.py`. The loader reads a local UTF-8 JSON object whose
+keys are record IDs, and returns a mapping to typed records. It makes no network
+calls and does not modify the source file.
+
+The schema requires a nonblank question, at least two nonblank string choices,
+and a strictly typed integer answer indexing those choices. Booleans, numeric
+strings, and floats are rejected as answer labels. Known split, subject, and task
+names are validated; unknown fields are rejected to surface schema changes.
+IDs, source text, record order, and upstream split names are preserved.
+
+Hint, lecture, and solution text may be empty or omitted. Omitted reference-text
+fields default to empty strings. Explicit null values are rejected for these
+string fields; the image field allows null. Records from every subject and those
+with images remain valid here, since selection is a subsequent operation.
+
+Malformed records fail the entire load rather than being silently discarded.
+Validation messages identify record IDs and show up to five errors without
+printing complete source records. Duplicate JSON IDs or fields are rejected
+before the JSON parser can overwrite their earlier values.
+
+Run the CLI from the repository root:
+
+```bash
+uv run science-tutor inspect-data \
+  data/raw/scienceqa/2cbf8318e07b9ece895bb2ae605e71e38d623264/problems.json
+```
+
+The pinned file passes this schema: 21,208 records, with 12,726 `train`, 4,241
+`val`, and 4,241 `test` records. This is structural validation only. Source
+integrity verification, eligibility filtering, duplicate-question analysis,
+scientific-quality review, and deterministic sampling remain pending.
+
 ## Planned selection and audit
 
 1. Download from the pinned revision and record a content checksum.
