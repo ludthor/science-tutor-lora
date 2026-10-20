@@ -12,9 +12,10 @@ subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
 **Status:** data audit in progress. Configuration validation, verified ScienceQA
-download/cache reuse, schema validation, runtime inspection, tests, CI, and a
-Colab setup notebook are available. Dataset filtering, training, inference, and evaluation are planned.
-No model has been trained and no performance results are claimed.
+download/cache reuse, schema validation, eligibility filtering, runtime inspection,
+tests, CI, and a Colab setup notebook are available. Duplicate analysis, sampling,
+training, inference, and evaluation are planned. No model has been trained and
+no performance results are claimed.
 
 ## Quick start
 
@@ -65,7 +66,7 @@ Local development targets a MacBook Air M4 with 24 GB unified memory. Optional
 MLX training is deferred until the CUDA experiment works. Backend-specific model
 loading will stay separate from dataset preparation and evaluation.
 
-## Fetch and inspect the source
+## Fetch, inspect, and filter the source
 
 Download the pinned file, or verify and reuse the local cache:
 
@@ -73,6 +74,7 @@ Download the pinned file, or verify and reuse the local cache:
 uv run science-tutor fetch-data configs/smoke.toml
 uv run science-tutor inspect-data \
   data/raw/scienceqa/2cbf8318e07b9ece895bb2ae605e71e38d623264/problems.json
+uv run science-tutor filter-data configs/smoke.toml
 ```
 
 `fetch-data` checks the SHA-256 in the experiment configuration on every run.
@@ -84,7 +86,20 @@ choose a different cache root. See [data notes](docs/data.md) for error recovery
 `inspect-data` validates the source schema and prints record and split counts.
 It preserves upstream IDs and text, and fails on malformed records or duplicate
 JSON keys. Empty reference explanations remain valid source records. Neither
-command filters or samples data yet.
+`fetch-data` nor `inspect-data` filters or samples data.
+
+`filter-data` verifies and loads the source, then writes
+`data/processed/eligibility.json` with one decision per record. Policy v1 keeps
+natural-science records with no image and a nonblank reference explanation.
+Possible visual references in inputs or explanations are withheld for review.
+The report includes source provenance, rule definitions, exclusion reasons, and
+per-split counts. It copies no question or explanation text. Use `--output` to
+choose a report path and `--data-dir` to choose a cache root.
+
+The pinned source yields 3,901 eligible candidates and 156 requiring review.
+Eligibility is provisional: duplicate analysis and scientific-quality review
+are still needed before building the training samples. See the
+[policy and audit counts](docs/data.md#eligibility-policy-v1).
 
 ## Experiment milestones
 

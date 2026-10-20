@@ -11,7 +11,8 @@
 
 The full dataset contains 21,208 multiple-choice questions across natural,
 language, and social science, with answer, lecture, and solution annotations.
-The final eligible subset size is unknown until the full audit runs.
+The current policy yields 3,901 eligible candidates before duplicate analysis and
+manual quality review; final sample IDs are not selected yet.
 
 ## Initial source inspection — 2026-10-16
 
@@ -109,9 +110,70 @@ uv run science-tutor inspect-data \
 ```
 
 The pinned file passes this schema: 21,208 records, with 12,726 `train`, 4,241
-`val`, and 4,241 `test` records. This is structural validation only. Eligibility
-filtering, duplicate-question analysis, scientific-quality review, and
-deterministic sampling remain pending.
+`val`, and 4,241 `test` records. This is structural validation only. The following
+policy decides eligibility for our particular experiment.
+
+## Eligibility policy v1
+
+Run from the repository root:
+
+```bash
+uv run science-tutor filter-data configs/smoke.toml
+```
+
+The command fetches or verifies the configured source, validates every record,
+and writes `data/processed/eligibility.json`. Use `--data-dir` to change the cache
+root or `--output` to select a report path. Configuration and source files cannot
+be used as the output path. Input, integrity, and report-write failures return
+exit code 2. Report replacement is atomic and reruns produce identical bytes
+for the same source, policy, and subject setting.
+
+The policy assigns exactly one status to every record, retaining its original ID,
+source order, and split. It does not modify source text or move records between
+splits.
+
+- **Excluded:** the subject differs from the configured natural science subject,
+  an image is present, or the reference solution is empty after whitespace
+  stripping. Every applicable exclusion reason is recorded. An empty hint alone
+  does not exclude a record.
+- **Review:** after passing those base rules, a record contains a possible
+  visual reference in its question, hint, choices, or reference solution.
+  Review records are withheld from the eligible pool pending human inspection.
+- **Eligible:** a record passes the base rules and has no visual-reference flags.
+  This does not establish scientific correctness or complete text independence.
+
+Visual screening uses case-insensitive, context-based rules for phrases such as
+"the diagram", "each picture", numbered figures, captions, spatial references,
+and embedded HTML/Markdown images. Each flag records its field (including a
+zero-based choice index when applicable) and rule name. Unused lecture
+annotations are not screened. The report stores the actual regex rules and
+policy version alongside the source revision and checksum.
+
+The rules were developed using training records and invented test examples,
+then applied uniformly to all three splits. They can produce both false
+positives and false negatives: a reference to a physical table may be flagged,
+while an implicit dependency on an absent illustration may be missed. No
+automatic rule promotes review records back into eligibility. Scientific-quality
+review of the eligible pool and human handling of the review queue remain pending.
+
+Observed counts on 2026-10-20:
+
+| Split | Eligible candidates | Excluded | Review | Total |
+| --- | ---: | ---: | ---: | ---: |
+| train | 2,277 | 10,351 | 98 | 12,726 |
+| val | 825 | 3,384 | 32 | 4,241 |
+| test | 799 | 3,416 | 26 | 4,241 |
+| Total | 3,901 | 17,151 | 156 | 21,208 |
+
+Exclusion-reason counts overlap: 9,721 records have another subject, 10,332 have
+an image, and 2,006 have an empty solution. Visual screening only runs on the
+4,057 records passing those base rules; 156 receive review flags. Status counts
+partition the source, whereas reason counts must not be added to obtain a total.
+
+The report records each decision and its reasons without copying question or
+reference text. It is generated under the ignored `data/` directory. Sampling,
+duplicate-question analysis, prompt construction, and human review are separate
+steps and have not run as part of this command.
 
 ## Planned selection and audit
 

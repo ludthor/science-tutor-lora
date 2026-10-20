@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
 NonBlankText = Annotated[str, Field(pattern=r"\S")]
+Split = Literal["train", "val", "test"]
 
 
 class ScienceQARecord(BaseModel):
@@ -27,7 +28,7 @@ class ScienceQARecord(BaseModel):
     skill: NonBlankText
     lecture: str = ""
     solution: str = ""
-    split: Literal["train", "val", "test"]
+    split: Split
 
     @model_validator(mode="after")
     def check_answer_index(self) -> Self:

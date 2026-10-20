@@ -123,3 +123,82 @@ def test_fetch_data_reports_network_failure(
     assert "Cannot fetch dataset" in captured.err
     assert "offline" in captured.err
     assert captured.out == ""
+
+
+@pytest.fixture
+def cached_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
+    config = tmp_path / "experiment.toml"
+    config.write_text(
+        SMOKE_CONFIG.read_text().replace(
+            "4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7",
+            hashlib.sha256(source_payload).hexdigest(),
+        ),
+        encoding="utf-8",
+    )
+    directory = tmp_path / "scienceqa" / "2cbf8318e07b9ece895bb2ae605e71e38d623264"
+    directory.mkdir(parents=True)
+    source = directory / "problems.json"
+    source.write_bytes(source_payload)
+    return config, source
+
+
+def test_filter_data_writes_audit_from_verified_source(
+    tmp_path: Path, cached_source: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, source = cached_source
+    before = source.read_bytes()
+    output = tmp_path / "processed" / "eligibility.json"
+
+    assert (
+        main(["filter-data", str(config), "--data-dir", str(tmp_path), "--output", str(output)])
+        == 0
+    )
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    report = json.loads(output.read_text())
+    assert summary["by_status"] == {"eligible": 0, "excluded": 1, "review": 0}
+    assert summary["report"] == str(output)
+    assert report["decisions"][0]["reasons"] == ["missing_solution"]
+    assert source.read_bytes() == before
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("target", ["source", "config", "provenance"])
+def test_filter_data_cannot_overwrite_its_inputs(
+    tmp_path: Path,
+    cached_source: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+) -> None:
+    config, source = cached_source
+    output = {"source": source, "config": config, "provenance": source.parent / "source.json"}[
+        target
+    ]
+    before = source.read_bytes(), config.read_bytes()
+
+    assert (
+        main(["filter-data", str(config), "--data-dir", str(tmp_path), "--output", str(output)])
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert "must not overwrite" in captured.err
+    assert captured.out == ""
+    assert (source.read_bytes(), config.read_bytes()) == before
+    assert json.loads((source.parent / "source.json").read_text())["revision"]
+
+
+def test_filter_data_rejects_corruption_before_writing_report(
+    tmp_path: Path, cached_source: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, source = cached_source
+    source.write_bytes(b"corrupt")
+    output = tmp_path / "eligibility.json"
+
+    assert (
+        main(["filter-data", str(config), "--data-dir", str(tmp_path), "--output", str(output)])
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert "SHA-256 mismatch" in captured.err
+    assert captured.out == ""
+    assert not output.exists()

@@ -15,6 +15,11 @@ from pydantic import ValidationError
 from science_tutor.config import load_config
 from science_tutor.data import DatasetValidationError, load_scienceqa
 from science_tutor.download import SourceDownloadError, fetch_scienceqa
+from science_tutor.eligibility import (
+    POLICY_VERSION,
+    assess_eligibility,
+    write_eligibility_report,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -33,6 +38,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     fetch = commands.add_parser("fetch-data", help="Fetch or verify the pinned ScienceQA JSON.")
     fetch.add_argument("config", type=Path)
     fetch.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    filter_data = commands.add_parser(
+        "filter-data", help="Audit eligibility of verified ScienceQA."
+    )
+    filter_data.add_argument("config", type=Path)
+    filter_data.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    filter_data.add_argument("--output", type=Path, default=Path("data/processed/eligibility.json"))
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -90,6 +101,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "cached": artifact.cached,
                 },
                 indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "filter-data":
+        try:
+            artifact = fetch_scienceqa(config.dataset, args.data_dir)
+            protected = {
+                args.config.resolve(),
+                artifact.path.resolve(),
+                (artifact.path.parent / "source.json").resolve(),
+            }
+            if args.output.resolve() in protected:
+                raise ValueError("Report output must not overwrite configuration or source files.")
+            records = load_scienceqa(artifact.path)
+            decisions = assess_eligibility(records, config.dataset.subject)
+            summary = write_eligibility_report(args.output, decisions, config.dataset)
+        except (OSError, ValueError) as exc:
+            print(f"Cannot filter dataset: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {"report": str(args.output), "policy_version": POLICY_VERSION, **summary}, indent=2
             )
         )
         return 0
