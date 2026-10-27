@@ -175,6 +175,76 @@ reference text. It is generated under the ignored `data/` directory. Sampling,
 duplicate-question analysis, prompt construction, and human review are separate
 steps and have not run as part of this command.
 
+## Duplicate audit policy v1
+
+Run from the repository root:
+
+```bash
+uv run science-tutor audit-duplicates configs/smoke.toml
+```
+
+The command verifies and validates the source, recomputes eligibility policy v1,
+and audits only its 3,901 eligible candidates. It does not trust an edited or stale
+eligibility report. The output defaults to `data/processed/duplicates.json`; use
+`--output` and `--data-dir` to change report and cache locations. Configuration
+and source files cannot be overwritten. A successful audit returns exit code 0
+even when duplicate groups are present; this is not a training-readiness check.
+
+**Exact matching:** normalize question and hint with Unicode NFC, case folding,
+and collapsed whitespace. Preserve punctuation, numbers, and operators. Sort
+normalized choices while retaining repeated values, so choice permutations match.
+Hash the complete normalized question/hint/choice representation with SHA-256.
+A shared question stem with different context or choices is not sufficient.
+Numbers, negation words, and mathematical operators are not stripped.
+
+Group membership does not use answer labels, solutions, lectures, or split names.
+After grouping, compare normalized correct-choice text to flag possible answer
+conflicts. Compare answer text rather than answer indices, since shuffled choices
+can have different indices for the same answer. Case normalization can merge
+scientifically distinct capitalization (for example, units); matching normalized
+content alone does not establish interchangeable questions or incorrect labels.
+
+**Near screening:** only compare questions whose normalized hints and choice
+multisets match. Tokenize normalized questions into Unicode word runs and separate
+non-whitespace punctuation/symbols, form sets of adjacent token pairs, and flag
+Jaccard similarity of at least 0.9. The metric is intersection size divided by
+union size. A token-pair index avoids comparing questions with no shared pair.
+Identical normalized inputs are already in exact groups and are not also emitted
+as near pairs. Near pairs remain individual review candidates; they are not
+merged transitively into clusters.
+
+This is a limited lexical screen. It can miss paraphrases, changed-choice variants,
+and semantic equivalents; it can also flag questions with an important numerical
+or negation difference. Zero detected near pairs does not establish that there
+is no remaining leakage. The policy was specified using invented test examples,
+without selecting thresholds based on model performance or inspecting test-set
+answers to tune it.
+
+The report records the source revision/checksum, eligibility and duplicate policy
+versions, normalization and matching rules, threshold, sorted candidate IDs,
+exact groups, and near pairs. Group/pair members retain original IDs and splits;
+`cross_split` distinguishes within-split repetition from possible evaluation
+leakage. Reports contain no question, choice, hint, or reference-answer text.
+Output is atomic and deterministic, including when input dictionary order changes.
+
+Observed counts on 2026-10-27:
+
+| Finding | Count |
+| --- | ---: |
+| Eligible candidates audited | 3,901 |
+| Exact groups | 5 |
+| Records in exact groups | 10 |
+| Exact groups crossing splits | 3 |
+| Exact groups with conflicting correct-choice text | 5 |
+| Near pairs under this screen | 0 |
+
+Two exact groups are within a single split (one train, one test). The other three
+link train/test twice and validation/test once. All ten records remain in the
+source and the eligibility pool at this stage. The audit neither chooses a label
+nor removes or moves records. Conflict resolution or quarantine and enforcement
+of split separation belong to the next sample-building step. Human quality
+review and the existing visual-reference review queue also remain pending.
+
 ## Planned selection and audit
 
 1. Download from the pinned revision, verify the configured checksum, and record provenance.

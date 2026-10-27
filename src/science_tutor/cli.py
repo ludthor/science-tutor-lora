@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from science_tutor.config import load_config
 from science_tutor.data import DatasetValidationError, load_scienceqa
 from science_tutor.download import SourceDownloadError, fetch_scienceqa
+from science_tutor.duplicates import write_duplicate_report
 from science_tutor.eligibility import (
     POLICY_VERSION,
     assess_eligibility,
@@ -44,6 +45,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     filter_data.add_argument("config", type=Path)
     filter_data.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     filter_data.add_argument("--output", type=Path, default=Path("data/processed/eligibility.json"))
+    duplicates = commands.add_parser(
+        "audit-duplicates", help="Audit duplicates among eligible records."
+    )
+    duplicates.add_argument("config", type=Path)
+    duplicates.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    duplicates.add_argument("--output", type=Path, default=Path("data/processed/duplicates.json"))
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -105,7 +112,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "filter-data":
+    if args.command in {"filter-data", "audit-duplicates"}:
         try:
             artifact = fetch_scienceqa(config.dataset, args.data_dir)
             protected = {
@@ -116,10 +123,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.output.resolve() in protected:
                 raise ValueError("Report output must not overwrite configuration or source files.")
             records = load_scienceqa(artifact.path)
+            if args.command == "audit-duplicates":
+                duplicate_summary = write_duplicate_report(args.output, records, config.dataset)
+                print(json.dumps({"report": str(args.output), **duplicate_summary}, indent=2))
+                return 0
             decisions = assess_eligibility(records, config.dataset.subject)
             summary = write_eligibility_report(args.output, decisions, config.dataset)
         except (OSError, ValueError) as exc:
-            print(f"Cannot filter dataset: {exc}", file=sys.stderr)
+            action = "filter dataset" if args.command == "filter-data" else "audit duplicates"
+            print(f"Cannot {action}: {exc}", file=sys.stderr)
             return 2
         print(
             json.dumps(

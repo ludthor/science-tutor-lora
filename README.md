@@ -12,10 +12,10 @@ subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
 **Status:** data audit in progress. Configuration validation, verified ScienceQA
-download/cache reuse, schema validation, eligibility filtering, runtime inspection,
-tests, CI, and a Colab setup notebook are available. Duplicate analysis, sampling,
-training, inference, and evaluation are planned. No model has been trained and
-no performance results are claimed.
+download/cache reuse, schema validation, eligibility filtering, duplicate auditing,
+runtime inspection, tests, CI, and a Colab setup notebook are available. Duplicate
+resolution, sampling, training, inference, and evaluation are planned. No model
+has been trained and no performance results are claimed.
 
 ## Quick start
 
@@ -97,9 +97,26 @@ per-split counts. It copies no question or explanation text. Use `--output` to
 choose a report path and `--data-dir` to choose a cache root.
 
 The pinned source yields 3,901 eligible candidates and 156 requiring review.
-Eligibility is provisional: duplicate analysis and scientific-quality review
+Eligibility is provisional: duplicate resolution and scientific-quality review
 are still needed before building the training samples. See the
 [policy and audit counts](docs/data.md#eligibility-policy-v1).
+
+Audit duplicates among the eligible candidates:
+
+```bash
+uv run science-tutor audit-duplicates configs/smoke.toml
+```
+
+This recomputes eligibility from the verified source and writes
+`data/processed/duplicates.json`. Exact groups match normalized questions, hints,
+and choice multisets, including shuffled choices. A limited lexical screen flags
+near matches for review. The audit records IDs, splits, and possible annotation
+conflicts without copying source text or removing records.
+
+The current source has five exact groups involving ten records; three groups
+cross splits, and all five have conflicting correct-answer texts. No near pairs
+meet the defined screen. These findings require review before sampling; see the
+[duplicate policy and limitations](docs/data.md#duplicate-audit-policy-v1).
 
 ## Experiment milestones
 

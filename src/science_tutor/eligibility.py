@@ -1,8 +1,6 @@
 """Explain source eligibility without modifying records or choosing training samples."""
 
-import json
 import re
-import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -11,6 +9,7 @@ from typing import Literal, TypedDict
 
 from science_tutor.config import DatasetSettings
 from science_tutor.data import ScienceQARecord, Split
+from science_tutor.reports import write_json_report
 
 POLICY_VERSION = "1"
 EligibilityStatus = Literal["eligible", "excluded", "review"]
@@ -157,17 +156,5 @@ def write_eligibility_report(
         "summary": summary,
         "decisions": [asdict(decision) for decision in decisions],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, prefix=".eligibility-", delete=False
-        ) as stream:
-            temporary = Path(stream.name)
-            json.dump(report, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-        temporary.replace(path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    write_json_report(path, report)
     return summary

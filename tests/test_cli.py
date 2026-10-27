@@ -163,12 +163,14 @@ def test_filter_data_writes_audit_from_verified_source(
     assert captured.err == ""
 
 
+@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates"])
 @pytest.mark.parametrize("target", ["source", "config", "provenance"])
-def test_filter_data_cannot_overwrite_its_inputs(
+def test_audit_commands_cannot_overwrite_their_inputs(
     tmp_path: Path,
     cached_source: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
     target: str,
+    command: str,
 ) -> None:
     config, source = cached_source
     output = {"source": source, "config": config, "provenance": source.parent / "source.json"}[
@@ -176,10 +178,7 @@ def test_filter_data_cannot_overwrite_its_inputs(
     ]
     before = source.read_bytes(), config.read_bytes()
 
-    assert (
-        main(["filter-data", str(config), "--data-dir", str(tmp_path), "--output", str(output)])
-        == 2
-    )
+    assert main([command, str(config), "--data-dir", str(tmp_path), "--output", str(output)]) == 2
     captured = capsys.readouterr()
     assert "must not overwrite" in captured.err
     assert captured.out == ""
@@ -187,18 +186,39 @@ def test_filter_data_cannot_overwrite_its_inputs(
     assert json.loads((source.parent / "source.json").read_text())["revision"]
 
 
-def test_filter_data_rejects_corruption_before_writing_report(
-    tmp_path: Path, cached_source: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates"])
+def test_audit_commands_reject_corruption_before_writing_report(
+    tmp_path: Path,
+    cached_source: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    command: str,
 ) -> None:
     config, source = cached_source
     source.write_bytes(b"corrupt")
     output = tmp_path / "eligibility.json"
 
-    assert (
-        main(["filter-data", str(config), "--data-dir", str(tmp_path), "--output", str(output)])
-        == 2
-    )
+    assert main([command, str(config), "--data-dir", str(tmp_path), "--output", str(output)]) == 2
     captured = capsys.readouterr()
     assert "SHA-256 mismatch" in captured.err
     assert captured.out == ""
     assert not output.exists()
+
+
+def test_audit_duplicates_reports_empty_eligible_pool(
+    tmp_path: Path, cached_source: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, source = cached_source
+    before = source.read_bytes()
+    output = tmp_path / "duplicates.json"
+
+    assert (
+        main(
+            ["audit-duplicates", str(config), "--data-dir", str(tmp_path), "--output", str(output)]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["candidate_records"] == 0
+    assert json.loads(output.read_text())["exact_groups"] == []
+    assert captured.err == ""
+    assert source.read_bytes() == before
