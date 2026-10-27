@@ -5,6 +5,7 @@ import json
 import platform
 import sys
 import tomllib
+from collections import Counter
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -12,6 +13,14 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from science_tutor.config import load_config
+from science_tutor.data import DatasetValidationError, load_scienceqa
+from science_tutor.download import SourceDownloadError, fetch_scienceqa
+from science_tutor.duplicates import write_duplicate_report
+from science_tutor.eligibility import (
+    POLICY_VERSION,
+    assess_eligibility,
+    write_eligibility_report,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -25,6 +34,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     validate = commands.add_parser("validate", help="Validate a TOML experiment configuration.")
     validate.add_argument("config", type=Path)
     commands.add_parser("doctor", help="Print local runtime metadata without loading a model.")
+    inspect = commands.add_parser("inspect-data", help="Validate a local ScienceQA JSON file.")
+    inspect.add_argument("source", type=Path)
+    fetch = commands.add_parser("fetch-data", help="Fetch or verify the pinned ScienceQA JSON.")
+    fetch.add_argument("config", type=Path)
+    fetch.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    filter_data = commands.add_parser(
+        "filter-data", help="Audit eligibility of verified ScienceQA."
+    )
+    filter_data.add_argument("config", type=Path)
+    filter_data.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    filter_data.add_argument("--output", type=Path, default=Path("data/processed/eligibility.json"))
+    duplicates = commands.add_parser(
+        "audit-duplicates", help="Audit duplicates among eligible records."
+    )
+    duplicates.add_argument("config", type=Path)
+    duplicates.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    duplicates.add_argument("--output", type=Path, default=Path("data/processed/duplicates.json"))
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -43,11 +69,76 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "inspect-data":
+        try:
+            records = load_scienceqa(args.source)
+        except (OSError, DatasetValidationError) as exc:
+            print(f"Invalid dataset: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "records": len(records),
+                    "splits": dict(Counter(record.split for record in records.values())),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     try:
         config = load_config(args.config)
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, ValidationError) as exc:
         print(f"Invalid experiment configuration: {exc}", file=sys.stderr)
         return 2
+
+    if args.command == "fetch-data":
+        try:
+            artifact = fetch_scienceqa(config.dataset, args.data_dir)
+        except (OSError, SourceDownloadError) as exc:
+            print(f"Cannot fetch dataset: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "path": str(artifact.path),
+                    "sha256": artifact.sha256,
+                    "bytes": artifact.size_bytes,
+                    "cached": artifact.cached,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command in {"filter-data", "audit-duplicates"}:
+        try:
+            artifact = fetch_scienceqa(config.dataset, args.data_dir)
+            protected = {
+                args.config.resolve(),
+                artifact.path.resolve(),
+                (artifact.path.parent / "source.json").resolve(),
+            }
+            if args.output.resolve() in protected:
+                raise ValueError("Report output must not overwrite configuration or source files.")
+            records = load_scienceqa(artifact.path)
+            if args.command == "audit-duplicates":
+                duplicate_summary = write_duplicate_report(args.output, records, config.dataset)
+                print(json.dumps({"report": str(args.output), **duplicate_summary}, indent=2))
+                return 0
+            decisions = assess_eligibility(records, config.dataset.subject)
+            summary = write_eligibility_report(args.output, decisions, config.dataset)
+        except (OSError, ValueError) as exc:
+            action = "filter dataset" if args.command == "filter-data" else "audit duplicates"
+            print(f"Cannot {action}: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {"report": str(args.output), "policy_version": POLICY_VERSION, **summary}, indent=2
+            )
+        )
+        return 0
 
     print(config.model_dump_json(indent=2))
     return 0
