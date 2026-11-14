@@ -11,8 +11,9 @@
 
 The full dataset contains 21,208 multiple-choice questions across natural,
 language, and social science, with answer, lecture, and solution annotations.
-The current policy yields 3,901 eligible candidates before duplicate analysis and
-manual quality review; final sample IDs are not selected yet.
+Eligibility policy v1 yields 3,901 candidates. The sampling policy withholds ten
+conflicting records before selecting the train and validation IDs and reserving
+test IDs. Manual quality review remains pending.
 
 ## Initial source inspection — 2026-10-16
 
@@ -36,7 +37,7 @@ scientific-quality validation.
 Empty hints are allowed because context is optional. Records without reference
 solutions need an explicit eligibility decision before explanation training.
 An absent image alone does not establish that a question is answerable from text:
-diagram references, duplicates, and other quality checks remain pending.
+diagram references and duplicate questions are handled in later audit steps.
 
 The downloaded source and its local `source.json` provenance record are stored
 under `data/raw/scienceqa/<revision>/`, which is ignored by Git. This observed
@@ -239,22 +240,52 @@ Observed counts on 2026-10-27:
 | Near pairs under this screen | 0 |
 
 Two exact groups are within a single split (one train, one test). The other three
-link train/test twice and validation/test once. All ten records remain in the
-source and the eligibility pool at this stage. The audit neither chooses a label
-nor removes or moves records. Conflict resolution or quarantine and enforcement
-of split separation belong to the next sample-building step. Human quality
-review and the existing visual-reference review queue also remain pending.
+link train/test twice and validation/test once. The audit reports these records
+without changing the source or eligibility pool. Sampling acts on the findings.
 
-## Planned selection and audit
+## Sampling policy v1
 
-1. Download from the pinned revision, verify the configured checksum, and record provenance.
-2. Keep natural-science records with no image. Inspect references to absent
-   diagrams, malformed choices, and missing explanations; record all exclusions.
-3. Preserve upstream record IDs and train/validation/test assignments.
-4. Audit exact and near duplicates across splits. Document the detection rule
-   and any exclusions before training; never move test examples into training.
-5. Sample train/validation deterministically using the configured seed and save
-   the selected IDs. Keep the eligible test split isolated.
+```bash
+uv run science-tutor build-samples configs/smoke.toml
+```
+
+The command verifies the pinned source and recomputes eligibility and duplicate
+findings, so it works without either audit report on disk. It writes
+`data/processed/samples.json` atomically. Use `--data-dir` to change the cache root
+or `--output` for a separate manifest. The report cannot overwrite the config,
+raw source, or source metadata; an empty train or validation pool is an error.
+
+Quarantine applies before sampling. Withhold every record in an exact group with
+conflicting answers. Withhold both endpoints of every near match and any exact
+copies of those endpoints for review. For exact groups whose answers agree and
+that have no near-match flag, retain one copy: test before validation before
+train, then the lexicographically first ID within the winning split. Record why
+each record was withheld and, when applicable, which copy was kept. No answer or
+upstream split assignment changes. Visual-review records remain outside the
+candidate pool.
+
+Rank train and validation IDs independently by SHA-256 of the UTF-8 string
+`seed:split:record_id`, breaking hash ties by record ID. Take up to each configured
+limit in rank order. This makes the selection independent of source dictionary
+order and Python's random-number generator. The test reserve is the complete
+remaining test ID list in lexicographic order. Seed changes affect the sampling
+rank and leave the reserve unchanged.
+
+Observed with seed 42 on 2026-11-14:
+
+| Split | Eligible | Quarantined | Available | Sampled | Reserved |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| train | 2,277 | 4 | 2,273 | 500 | 0 |
+| val | 825 | 1 | 824 | 100 | 0 |
+| test | 799 | 5 | 794 | 0 | 794 |
+
+The manifest records the source checksum, policy versions, seed, limits, counts,
+quarantined IDs and reasons, and selected or reserved IDs. It contains no source
+question, hint, answer, or solution text. Sampling is a smoke-run selection, with
+no stratification by topic or grade. The original source remains intact, and the
+manifest under `data/` is ignored by Git. Manual quality review has not been done.
+
+## Prompt and quality review
 
 Inference inputs may contain `question`, `choices`, and audited `hint` text.
 The `answer` label and `solution` explanation are targets. `lecture` is an

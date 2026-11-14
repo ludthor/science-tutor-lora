@@ -125,8 +125,7 @@ def test_fetch_data_reports_network_failure(
     assert captured.out == ""
 
 
-@pytest.fixture
-def cached_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
+def _cache_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
     config = tmp_path / "experiment.toml"
     config.write_text(
         SMOKE_CONFIG.read_text().replace(
@@ -140,6 +139,11 @@ def cached_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
     source = directory / "problems.json"
     source.write_bytes(source_payload)
     return config, source
+
+
+@pytest.fixture
+def cached_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
+    return _cache_source(tmp_path, source_payload)
 
 
 def test_filter_data_writes_audit_from_verified_source(
@@ -163,7 +167,7 @@ def test_filter_data_writes_audit_from_verified_source(
     assert captured.err == ""
 
 
-@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates"])
+@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates", "build-samples"])
 @pytest.mark.parametrize("target", ["source", "config", "provenance"])
 def test_audit_commands_cannot_overwrite_their_inputs(
     tmp_path: Path,
@@ -186,7 +190,7 @@ def test_audit_commands_cannot_overwrite_their_inputs(
     assert json.loads((source.parent / "source.json").read_text())["revision"]
 
 
-@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates"])
+@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates", "build-samples"])
 def test_audit_commands_reject_corruption_before_writing_report(
     tmp_path: Path,
     cached_source: tuple[Path, Path],
@@ -222,3 +226,53 @@ def test_audit_duplicates_reports_empty_eligible_pool(
     assert json.loads(output.read_text())["exact_groups"] == []
     assert captured.err == ""
     assert source.read_bytes() == before
+
+
+def test_build_samples_is_repeatable_and_emits_only_ids(
+    tmp_path: Path, scienceqa_record: dict[str, object], capsys: pytest.CaptureFixture[str]
+) -> None:
+    source_rows = {
+        split: {
+            **scienceqa_record,
+            "split": split,
+            "question": question,
+            "solution": "Water flows.",
+        }
+        for split, question in {
+            "train": "What is in the glass?",
+            "val": "Which substance boils?",
+            "test": "Which liquid takes the shape of its container?",
+        }.items()
+    }
+    config, source = _cache_source(tmp_path, json.dumps(source_rows).encode())
+    before = source.read_bytes()
+    output = tmp_path / "processed" / "samples.json"
+    args = ["build-samples", str(config), "--data-dir", str(tmp_path), "--output", str(output)]
+
+    assert main(args) == 0
+    first = capsys.readouterr()
+    manifest_bytes = output.read_bytes()
+    assert main(args) == 0
+    assert capsys.readouterr() == first
+    assert output.read_bytes() == manifest_bytes
+    manifest = json.loads(manifest_bytes)
+    assert manifest["samples"] == {"train": ["train"], "val": ["val"]}
+    assert manifest["reserved_test_ids"] == ["test"]
+    assert json.loads(first.out)["by_split"]["test"]["sampled"] == 0
+    assert "Water flows." not in manifest_bytes.decode()
+    assert "What is in the glass?" not in manifest_bytes.decode()
+    assert first.err == ""
+    assert source.read_bytes() == before
+
+
+def test_build_samples_leaves_existing_manifest_when_a_split_is_empty(
+    tmp_path: Path, cached_source: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, _ = cached_source
+    output = tmp_path / "samples.json"
+    output.write_text("previous manifest")
+    args = ["build-samples", str(config), "--data-dir", str(tmp_path), "--output", str(output)]
+
+    assert main(args) == 2
+    assert "No usable train records" in capsys.readouterr().err
+    assert output.read_text() == "previous manifest"

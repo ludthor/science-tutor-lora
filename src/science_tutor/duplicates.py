@@ -13,7 +13,7 @@ from pathlib import Path
 from science_tutor.config import DatasetSettings
 from science_tutor.data import ScienceQARecord, Split
 from science_tutor.eligibility import POLICY_VERSION as ELIGIBILITY_POLICY_VERSION
-from science_tutor.eligibility import assess_eligibility
+from science_tutor.eligibility import eligible_records
 from science_tutor.reports import write_json_report
 
 DUPLICATE_POLICY_VERSION = "1"
@@ -159,12 +159,7 @@ def write_duplicate_report(
     path: Path, records: Mapping[str, ScienceQARecord], settings: DatasetSettings
 ) -> dict[str, int]:
     """Recompute eligibility, audit candidates, and write a provenance-backed report."""
-    decisions = assess_eligibility(records, settings.subject)
-    candidates = {
-        decision.record_id: records[decision.record_id]
-        for decision in decisions
-        if decision.status == "eligible"
-    }
+    candidates = eligible_records(records, settings.subject)
     audit = audit_duplicates(candidates)
     summary = audit.summary()
     report = {

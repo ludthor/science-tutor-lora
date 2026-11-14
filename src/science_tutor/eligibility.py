@@ -112,6 +112,17 @@ def assess_eligibility(
     return tuple(decisions)
 
 
+def eligible_records(
+    records: Mapping[str, ScienceQARecord], subject: str
+) -> dict[str, ScienceQARecord]:
+    """Derive the candidate pool from the source rather than a saved report."""
+    return {
+        decision.record_id: records[decision.record_id]
+        for decision in assess_eligibility(records, subject)
+        if decision.status == "eligible"
+    }
+
+
 def summarize_eligibility(decisions: Sequence[EligibilityDecision]) -> EligibilitySummary:
     """Partition counts by status; reason counts may overlap for excluded records."""
     by_status: dict[str, int] = {status: 0 for status in _STATUSES}

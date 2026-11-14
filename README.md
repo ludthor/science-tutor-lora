@@ -11,11 +11,11 @@ The first experiment uses SmolLM2-1.7B-Instruct and a text-only, natural-science
 subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
-**Status:** data audit in progress. Configuration validation, verified ScienceQA
-download/cache reuse, schema validation, eligibility filtering, duplicate auditing,
-runtime inspection, tests, CI, and a Colab setup notebook are available. Duplicate
-resolution, sampling, training, inference, and evaluation are planned. No model
-has been trained and no performance results are claimed.
+**Status:** data preparation. The pipeline verifies ScienceQA, audits eligibility
+and duplicates, quarantines ambiguous records, and builds reproducible sample
+manifests. Manual quality review, prompt construction, training, inference, and
+evaluation are pending. No model has been trained and no performance results
+are claimed.
 
 ## Quick start
 
@@ -97,8 +97,8 @@ per-split counts. It copies no question or explanation text. Use `--output` to
 choose a report path and `--data-dir` to choose a cache root.
 
 The pinned source yields 3,901 eligible candidates and 156 requiring review.
-Eligibility is provisional: duplicate resolution and scientific-quality review
-are still needed before building the training samples. See the
+Eligibility is provisional. The sampling step applies duplicate quarantine, and
+manual scientific-quality review remains pending. See the
 [policy and audit counts](docs/data.md#eligibility-policy-v1).
 
 Audit duplicates among the eligible candidates:
@@ -115,8 +115,19 @@ conflicts without copying source text or removing records.
 
 The current source has five exact groups involving ten records; three groups
 cross splits, and all five have conflicting correct-answer texts. No near pairs
-meet the defined screen. These findings require review before sampling; see the
+meet the defined screen. See the
 [duplicate policy and limitations](docs/data.md#duplicate-audit-policy-v1).
+
+Build the sample manifest after applying the quarantine policy:
+
+```bash
+uv run science-tutor build-samples configs/smoke.toml
+```
+
+The manifest at `data/processed/samples.json` records 500 training IDs, 100
+validation IDs, 794 reserved test IDs, and the reasons for withholding ten
+conflicting records. It contains IDs and provenance only. Seed 42 and the pinned
+source make the selection reproducible. [Sampling policy](docs/data.md#sampling-policy-v1)
 
 ## Experiment milestones
 

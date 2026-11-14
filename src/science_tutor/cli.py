@@ -21,6 +21,8 @@ from science_tutor.eligibility import (
     assess_eligibility,
     write_eligibility_report,
 )
+from science_tutor.reports import write_json_report
+from science_tutor.sampling import build_sample_manifest
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,6 +53,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     duplicates.add_argument("config", type=Path)
     duplicates.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     duplicates.add_argument("--output", type=Path, default=Path("data/processed/duplicates.json"))
+    samples = commands.add_parser("build-samples", help="Quarantine duplicates and sample IDs.")
+    samples.add_argument("config", type=Path)
+    samples.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    samples.add_argument("--output", type=Path, default=Path("data/processed/samples.json"))
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -112,7 +118,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    if args.command in {"filter-data", "audit-duplicates"}:
+    actions = {
+        "filter-data": "filter dataset",
+        "audit-duplicates": "audit duplicates",
+        "build-samples": "build samples",
+    }
+    if args.command in actions:
         try:
             artifact = fetch_scienceqa(config.dataset, args.data_dir)
             protected = {
@@ -123,6 +134,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.output.resolve() in protected:
                 raise ValueError("Report output must not overwrite configuration or source files.")
             records = load_scienceqa(artifact.path)
+            if args.command == "build-samples":
+                manifest = build_sample_manifest(records, config)
+                write_json_report(args.output, manifest)
+                print(
+                    json.dumps(
+                        {
+                            "manifest": str(args.output),
+                            "seed": manifest["seed"],
+                            "by_split": manifest["by_split"],
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
             if args.command == "audit-duplicates":
                 duplicate_summary = write_duplicate_report(args.output, records, config.dataset)
                 print(json.dumps({"report": str(args.output), **duplicate_summary}, indent=2))
@@ -130,8 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             decisions = assess_eligibility(records, config.dataset.subject)
             summary = write_eligibility_report(args.output, decisions, config.dataset)
         except (OSError, ValueError) as exc:
-            action = "filter dataset" if args.command == "filter-data" else "audit duplicates"
-            print(f"Cannot {action}: {exc}", file=sys.stderr)
+            print(f"Cannot {actions[args.command]}: {exc}", file=sys.stderr)
             return 2
         print(
             json.dumps(
