@@ -10,6 +10,7 @@ revision = "31b70e2e869a7173562077fd711b654946d38674"
 [dataset]
 repository = "lupantech/ScienceQA"
 revision = "2cbf8318e07b9ece895bb2ae605e71e38d623264"
+sha256 = "4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7"
 subject = "natural science"
 max_train_examples = 500
 max_validation_examples = 100
