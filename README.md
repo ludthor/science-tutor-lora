@@ -12,10 +12,10 @@ subset of ScienceQA. Given a question and its answer choices, the intended model
 output is a selected answer and a short explanation.
 
 **Status:** data preparation. The pipeline verifies ScienceQA, audits eligibility
-and duplicates, quarantines ambiguous records, and builds reproducible sample
-manifests. Manual quality review, prompt construction, training, inference, and
-evaluation are pending. No model has been trained and no performance results
-are claimed.
+and duplicates, quarantines ambiguous records, and builds reproducible samples
+and chat prompts. An initial quality spot check is complete. Baseline inference,
+training, and evaluation are pending. No model has been trained and no
+performance results are claimed.
 
 ## Quick start
 
@@ -128,6 +128,18 @@ The manifest at `data/processed/samples.json` records 500 training IDs, 100
 validation IDs, 794 reserved test IDs, and the reasons for withholding ten
 conflicting records. It contains IDs and provenance only. Seed 42 and the pinned
 source make the selection reproducible. [Sampling policy](docs/data.md#sampling-policy-v1)
+
+Build the training prompts/completions and validation prompts/references:
+
+```bash
+uv run science-tutor build-prompts configs/smoke.toml
+```
+
+The command writes `data/processed/prompts.json` from the verified source and
+the same sample selection. A model receives only the chat `prompt` messages
+for a zero-shot query. Training `completion` messages and validation `reference`
+objects are stored separately in each row. Reserved test records are not
+exported. See the [prompt format and spot check](docs/data.md#prompt-and-quality-review).
 
 ## Experiment milestones
 

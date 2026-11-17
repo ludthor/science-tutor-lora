@@ -167,7 +167,9 @@ def test_filter_data_writes_audit_from_verified_source(
     assert captured.err == ""
 
 
-@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates", "build-samples"])
+@pytest.mark.parametrize(
+    "command", ["filter-data", "audit-duplicates", "build-samples", "build-prompts"]
+)
 @pytest.mark.parametrize("target", ["source", "config", "provenance"])
 def test_audit_commands_cannot_overwrite_their_inputs(
     tmp_path: Path,
@@ -190,7 +192,9 @@ def test_audit_commands_cannot_overwrite_their_inputs(
     assert json.loads((source.parent / "source.json").read_text())["revision"]
 
 
-@pytest.mark.parametrize("command", ["filter-data", "audit-duplicates", "build-samples"])
+@pytest.mark.parametrize(
+    "command", ["filter-data", "audit-duplicates", "build-samples", "build-prompts"]
+)
 def test_audit_commands_reject_corruption_before_writing_report(
     tmp_path: Path,
     cached_source: tuple[Path, Path],
@@ -276,3 +280,42 @@ def test_build_samples_leaves_existing_manifest_when_a_split_is_empty(
     assert main(args) == 2
     assert "No usable train records" in capsys.readouterr().err
     assert output.read_text() == "previous manifest"
+
+
+def test_build_prompts_writes_split_specific_rows(
+    tmp_path: Path, scienceqa_record: dict[str, object], capsys: pytest.CaptureFixture[str]
+) -> None:
+    source_rows = {
+        split: {
+            **scienceqa_record,
+            "split": split,
+            "question": question,
+            "solution": "Water flows.",
+        }
+        for split, question in {
+            "train": "What is in the glass?",
+            "val": "Which substance boils?",
+            "test": "Which liquid takes the shape of its container?",
+        }.items()
+    }
+    config, _ = _cache_source(tmp_path, json.dumps(source_rows).encode())
+    output = tmp_path / "prompts.json"
+    args = ["build-prompts", str(config), "--data-dir", str(tmp_path), "--output", str(output)]
+
+    assert main(args) == 0
+    stdout, stderr = capsys.readouterr()
+    dataset_text = output.read_text()
+    dataset = json.loads(dataset_text)
+    assert json.loads(stdout) == {
+        "output": str(output),
+        "format_version": "1",
+        "train": 1,
+        "validation": 1,
+    }
+    assert stderr == ""
+    assert "completion" in dataset["train"][0]
+    assert "completion" not in dataset["validation"][0]
+    assert dataset["validation"][0]["reference"]["answer"] == "A"
+    assert "Which liquid takes the shape of its container?" not in dataset_text
+    assert main(args) == 0
+    assert output.read_text() == dataset_text
