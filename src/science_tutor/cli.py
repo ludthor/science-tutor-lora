@@ -21,6 +21,7 @@ from science_tutor.eligibility import (
     assess_eligibility,
     write_eligibility_report,
 )
+from science_tutor.prompts import build_prompt_dataset
 from science_tutor.reports import write_json_report
 from science_tutor.sampling import build_sample_manifest
 
@@ -57,6 +58,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     samples.add_argument("config", type=Path)
     samples.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     samples.add_argument("--output", type=Path, default=Path("data/processed/samples.json"))
+    prompts = commands.add_parser("build-prompts", help="Build the train and validation prompts.")
+    prompts.add_argument("config", type=Path)
+    prompts.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    prompts.add_argument("--output", type=Path, default=Path("data/processed/prompts.json"))
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -122,6 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "filter-data": "filter dataset",
         "audit-duplicates": "audit duplicates",
         "build-samples": "build samples",
+        "build-prompts": "build prompts",
     }
     if args.command in actions:
         try:
@@ -134,6 +140,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.output.resolve() in protected:
                 raise ValueError("Report output must not overwrite configuration or source files.")
             records = load_scienceqa(artifact.path)
+            if args.command == "build-prompts":
+                dataset = build_prompt_dataset(records, config)
+                write_json_report(args.output, dataset)
+                print(
+                    json.dumps(
+                        {
+                            "output": str(args.output),
+                            "format_version": dataset["format_version"],
+                            "train": len(dataset["train"]),
+                            "validation": len(dataset["validation"]),
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
             if args.command == "build-samples":
                 manifest = build_sample_manifest(records, config)
                 write_json_report(args.output, manifest)

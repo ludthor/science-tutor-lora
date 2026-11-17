@@ -13,7 +13,7 @@ The full dataset contains 21,208 multiple-choice questions across natural,
 language, and social science, with answer, lecture, and solution annotations.
 Eligibility policy v1 yields 3,901 candidates. The sampling policy withholds ten
 conflicting records before selecting the train and validation IDs and reserving
-test IDs. Manual quality review remains pending.
+test IDs. The first prompt spot check is documented below.
 
 ## Initial source inspection — 2026-10-16
 
@@ -283,14 +283,54 @@ The manifest records the source checksum, policy versions, seed, limits, counts,
 quarantined IDs and reasons, and selected or reserved IDs. It contains no source
 question, hint, answer, or solution text. Sampling is a smoke-run selection, with
 no stratification by topic or grade. The original source remains intact, and the
-manifest under `data/` is ignored by Git. Manual quality review has not been done.
+manifest under `data/` is ignored by Git.
 
 ## Prompt and quality review
 
-Inference inputs may contain `question`, `choices`, and audited `hint` text.
-The `answer` label and `solution` explanation are targets. `lecture` is an
-annotation and will not be provided as inference context in version one.
-Use the same input policy for baselines and fine-tuning.
+```bash
+uv run science-tutor build-prompts configs/smoke.toml
+```
+
+Prompt format v1 rebuilds the seed-selected splits from the verified source and
+writes an atomic, local `data/processed/prompts.json`. It includes the format and
+sampling policy versions, source provenance, seed, limits, and 500 `train` and
+100 `validation` rows in sample order. `--data-dir` and `--output` override the
+defaults. The exporter omits the reserved test IDs and their content. The output
+contains source text and references, so keep it under ignored `data/`.
+
+Each row has a `record_id` and a `prompt` with `system` and `user` chat messages.
+The system message requests a short explanation and a strict JSON object with
+`answer` and `explanation` string fields. The user message contains only the
+question, ordered lettered choices, and a nonblank hint, encoded as JSON. The
+source answer index is converted to a letter. The original solution is used as
+the explanation, with surrounding whitespace removed. Lecture annotations are
+omitted. A synthetic example of the user payload and the separate target:
+
+```jsonl
+{"question": "Which is a liquid?", "choices": {"A": "Steam", "B": "Water"}}
+{"answer": "B", "explanation": "Water is liquid at room temperature."}
+```
+
+Training rows store the target as one assistant message in `completion`.
+Validation rows store it as a `reference` object for scoring after generation.
+Zero-shot inference uses `prompt` alone. For few-shot inference,
+`inference_messages()` inserts caller-selected training prompt/completion pairs
+before the validation question. Only pass examples from `train` as
+demonstrations. The helper omits the query reference and rejects a demonstration
+with the same ID as the query. This format does not tokenize examples, mask
+training tokens, parse generated text, or run the model yet.
+
+On 2026-11-17, Codex spot-checked the first five rows in each seeded split:
+train `12759`, `18536`, `5484`, `20797`, `18103`; validation `11481`, `6889`,
+`9699`, `11584`, `592`. Each rendered with a valid choice letter and a separate
+reference. Training record `12759` is scientifically ambiguous: equal speed
+alone does not determine the pulling force, and the reference assumes a
+starting condition omitted from the question. Validation record `11584` uses
+implausible distances for ducks over the stated period, although the relative
+speed calculation works. Several reference explanations run longer than the
+requested brief response. Findings are recorded here without changing the
+manifest or rewriting labels. Resolve flagged data-quality issues before
+training. This small spot check does not certify all 600 records or their hints.
 
 ## Model
 
