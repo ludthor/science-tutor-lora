@@ -11,7 +11,7 @@ from science_tutor.duplicates import DUPLICATE_POLICY_VERSION, DuplicateAudit, a
 from science_tutor.eligibility import POLICY_VERSION as ELIGIBILITY_POLICY_VERSION
 from science_tutor.eligibility import eligible_records
 
-SAMPLING_POLICY_VERSION = "1"
+SAMPLING_POLICY_VERSION = "2"
 _SPLITS: tuple[Split, ...] = ("train", "val", "test")
 _SPLIT_PRIORITY: dict[Split, int] = {"test": 0, "val": 1, "train": 2}
 QuarantineReason = Literal["conflicting_exact_answers", "near_duplicate_review", "redundant_exact"]
@@ -27,6 +27,7 @@ class QuarantineEntry(TypedDict):
 class SplitCounts(TypedDict):
     eligible: int
     quarantined: int
+    quality_excluded: int
     available: int
     sampled: int
     reserved: int
@@ -43,6 +44,7 @@ class SampleManifest(TypedDict):
     samples: dict[str, list[str]]
     reserved_test_ids: list[str]
     quarantine: list[QuarantineEntry]
+    quality_exclusions: dict[str, str]
 
 
 def _quarantine(
@@ -99,10 +101,19 @@ def build_sample_manifest(
     candidates = eligible_records(records, config.dataset.subject)
     quarantine = _quarantine(candidates, audit_duplicates(candidates))
     withheld = {entry["record_id"] for entry in quarantine}
+    exclusions = config.dataset.quality_exclusions
+    quality_counts: Counter[Split] = Counter()
+    for record_id in exclusions:
+        record = candidates.get(record_id)
+        if record is None or record_id in withheld or record.split == "test":
+            raise ValueError(
+                f"Quality exclusion {record_id!r} must name a usable train/val record."
+            )
+        quality_counts[record.split] += 1
     eligible_counts = Counter(record.split for record in candidates.values())
     pools: dict[Split, list[str]] = {split: [] for split in _SPLITS}
     for record_id, record in candidates.items():
-        if record_id not in withheld:
+        if record_id not in withheld and record_id not in exclusions:
             pools[record.split].append(record_id)
 
     limits = {
@@ -118,7 +129,8 @@ def build_sample_manifest(
     by_split: dict[Split, SplitCounts] = {
         split: {
             "eligible": eligible_counts[split],
-            "quarantined": eligible_counts[split] - len(pools[split]),
+            "quarantined": eligible_counts[split] - len(pools[split]) - quality_counts[split],
+            "quality_excluded": quality_counts[split],
             "available": len(pools[split]),
             "sampled": len(samples.get(split, [])),
             "reserved": len(reserved) if split == "test" else 0,
@@ -142,6 +154,7 @@ def build_sample_manifest(
             "near_matches": "quarantine both endpoints and their exact copies",
             "agreed_exact_tie_break": "test > val > train, then lexicographic record ID",
             "sampling_rank": "SHA-256 of UTF-8 seed:split:record_id, then record ID",
+            "quality_exclusions": "apply documented train/val exclusions before sampling",
         },
         "seed": config.seed,
         "limits": limits,
@@ -149,4 +162,5 @@ def build_sample_manifest(
         "samples": samples,
         "reserved_test_ids": reserved,
         "quarantine": quarantine,
+        "quality_exclusions": dict(sorted(exclusions.items())),
     }

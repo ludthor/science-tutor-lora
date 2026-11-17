@@ -33,6 +33,9 @@ class DatasetSettings(Settings):
     subject: Literal["natural science"]
     max_train_examples: PositiveInt
     max_validation_examples: PositiveInt
+    quality_exclusions: dict[
+        Annotated[str, Field(pattern=r"\S")], Annotated[str, Field(pattern=r"\S")]
+    ] = Field(default_factory=dict)
 
 
 class LoraSettings(Settings):

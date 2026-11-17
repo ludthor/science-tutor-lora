@@ -7,7 +7,7 @@ from urllib.error import URLError
 
 import pytest
 
-from science_tutor import download
+from science_tutor import cli, download
 from science_tutor.cli import main
 
 SMOKE_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "smoke.toml"
@@ -127,8 +127,10 @@ def test_fetch_data_reports_network_failure(
 
 def _cache_source(tmp_path: Path, source_payload: bytes) -> tuple[Path, Path]:
     config = tmp_path / "experiment.toml"
+    before, _, remainder = SMOKE_CONFIG.read_text().partition("[dataset.quality_exclusions]")
+    _, _, after = remainder.partition("[lora]")
     config.write_text(
-        SMOKE_CONFIG.read_text().replace(
+        (before + "[lora]" + after).replace(
             "4d9b598da966d9736dd79e430a97da861a2216aeb7483a5092350e823ab20ce7",
             hashlib.sha256(source_payload).hexdigest(),
         ),
@@ -319,3 +321,56 @@ def test_build_prompts_writes_split_specific_rows(
     assert "Which liquid takes the shape of its container?" not in dataset_text
     assert main(args) == 0
     assert output.read_text() == dataset_text
+
+
+def test_run_baselines_writes_scoring_and_reproducibility_metadata(
+    tmp_path: Path,
+    scienceqa_record: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rows = {
+        split: {
+            **scienceqa_record,
+            "split": split,
+            "question": f"What is in the {split} container?",
+            "solution": f"Reference for {split}.",
+        }
+        for split in ("train", "val", "test")
+    }
+    config, _ = _cache_source(tmp_path, json.dumps(rows).encode())
+    path = tmp_path / "baselines.json"
+    monkeypatch.setattr(
+        cli,
+        "load_generator",
+        lambda *_: (
+            lambda batch: ['{"answer":"A","explanation":"Water."}'] * len(batch),
+            {"device": "mock"},
+        ),
+    )
+
+    assert (
+        main(
+            [
+                "run-baselines",
+                str(config),
+                "--data-dir",
+                str(tmp_path),
+                "--output",
+                str(path),
+                "--shots",
+                "1",
+            ]
+        )
+        == 0
+    )
+    stdout, stderr = capsys.readouterr()
+    report = json.loads(path.read_text())
+    assert report["validation_ids"] == ["val"]
+    assert report["demonstration_ids"] == ["train"]
+    assert report["runtime"]["device"] == "mock"
+    assert len(report["prompt_dataset_sha256"]) == 64
+    assert report["model"]["revision"]
+    assert report["zero_shot"]["predictions"][0]["correct"]
+    assert json.loads(stdout)["few_shot"]["accuracy"] == 1.0
+    assert "few_shot: 1/1" in stderr

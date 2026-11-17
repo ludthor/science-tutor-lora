@@ -13,7 +13,10 @@ from science_tutor.sampling import build_sample_manifest
 
 @pytest.fixture
 def config() -> ExperimentConfig:
-    return load_config(Path(__file__).resolve().parents[1] / "configs" / "smoke.toml")
+    config = load_config(Path(__file__).resolve().parents[1] / "configs" / "smoke.toml")
+    return config.model_copy(
+        update={"dataset": config.dataset.model_copy(update={"quality_exclusions": {}})}
+    )
 
 
 @pytest.fixture

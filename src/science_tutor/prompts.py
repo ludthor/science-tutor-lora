@@ -47,6 +47,7 @@ class PromptDataset(TypedDict):
     sampling_policy: dict[str, str]
     seed: int
     limits: dict[str, int]
+    quality_exclusions: dict[str, str]
     train: list[TrainingExample]
     validation: list[ValidationExample]
 
@@ -109,6 +110,7 @@ def build_prompt_dataset(
         "sampling_policy": manifest["policy"],
         "seed": manifest["seed"],
         "limits": manifest["limits"],
+        "quality_exclusions": manifest["quality_exclusions"],
         "train": train,
         "validation": validation,
     }
