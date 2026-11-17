@@ -157,6 +157,9 @@ two seed-ranked training examples. Invalid responses count as incorrect. The
 default output, `outputs/baselines.json`, keeps per-record outputs and scores
 local. See [baseline method and results](docs/baselines.md).
 
+On the 100-question validation run, zero-shot scored **57%** and two-shot
+**63%**. Zero-shot produced no invalid responses; two-shot produced four.
+
 ## Experiment milestones
 
 1. **Foundation:** package, configuration, CLI, tests, CI, Gitflow, setup notebook.

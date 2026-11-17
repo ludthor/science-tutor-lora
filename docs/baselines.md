@@ -37,3 +37,27 @@ inference time, and raw responses. It is written atomically to ignored
 raw responses, which may reproduce data text. Timings exclude setup and model
 loading; they measure both conditions together. Different runtimes or batching
 choices may affect exact generated outputs.
+
+## Measured results
+
+Run on Apple M4 with 24 GB unified memory, PyTorch 2.15.0, Transformers 4.57.6,
+Python 3.12.8, and float16 on MPS. The two conditions took **246.5 seconds** of
+inference time combined. The run used the 100 seed-42 validation IDs after the
+documented quality exclusions. Demonstration IDs were `18536` and `5484`.
+
+| Prompt | Correct / total | Accuracy | Invalid responses |
+| --- | ---: | ---: | ---: |
+| Zero-shot | 57 / 100 | 57% | 0 / 100 |
+| Two-shot | 63 / 100 | 63% | 4 / 100 |
+
+Both prompts answered 49 questions correctly. Two-shot gained 14 correct answers
+and lost eight relative to zero-shot. Three two-shot responses were invalid JSON,
+and one JSON response failed the required output schema. The six-point gain is
+specific to this validation sample and these demonstrations. It does not establish
+better explanations or performance on the reserved test set.
+
+Prompt dataset SHA-256 (sorted-key JSON as serialized by the runner):
+`980791bf8b6cbdec700b195708c01e4134a379242fd7d31564ac677144bacd32`.
+The test reserve remains unchanged at 794 IDs. Before comparing a future LoRA
+adapter, rerun the relevant unadapted baseline on the same inference runtime and
+with the same scoring rules.
