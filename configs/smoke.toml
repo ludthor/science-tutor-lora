@@ -15,6 +15,10 @@ subject = "natural science"
 max_train_examples = 500
 max_validation_examples = 100
 
+[dataset.quality_exclusions]
+"12759" = "Equal speed does not establish pulling force; the explanation assumes startup."
+"11584" = "The relative-speed calculation uses implausible sustained swimming speeds for ducks."
+
 [lora]
 rank = 8
 alpha = 16

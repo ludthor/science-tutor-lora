@@ -243,7 +243,7 @@ Two exact groups are within a single split (one train, one test). The other thre
 link train/test twice and validation/test once. The audit reports these records
 without changing the source or eligibility pool. Sampling acts on the findings.
 
-## Sampling policy v1
+## Sampling policy
 
 ```bash
 uv run science-tutor build-samples configs/smoke.toml
@@ -264,6 +264,11 @@ each record was withheld and, when applicable, which copy was kept. No answer or
 upstream split assignment changes. Visual-review records remain outside the
 candidate pool.
 
+Policy v2 also applies the reasoned exclusions in `[dataset.quality_exclusions]`
+after duplicate quarantine and before ranking. It rejects missing or non-usable
+IDs and any test ID in that list. The next ranked eligible ID fills each gap when
+the pool has enough records. The manifest logs these separately from quarantine.
+
 Rank train and validation IDs independently by SHA-256 of the UTF-8 string
 `seed:split:record_id`, breaking hash ties by record ID. Take up to each configured
 limit in rank order. This makes the selection independent of source dictionary
@@ -278,6 +283,10 @@ Observed with seed 42 on 2026-11-14:
 | train | 2,277 | 4 | 2,273 | 500 | 0 |
 | val | 825 | 1 | 824 | 100 | 0 |
 | test | 799 | 5 | 794 | 0 | 794 |
+
+For the baseline, policy v2 excluded one more candidate each from train and
+validation. This left 2,272 train and 823 validation candidates, still sampled
+to 500 and 100 respectively. The same 794 test IDs remain reserved.
 
 The manifest records the source checksum, policy versions, seed, limits, counts,
 quarantined IDs and reasons, and selected or reserved IDs. It contains no source
@@ -317,8 +326,8 @@ Zero-shot inference uses `prompt` alone. For few-shot inference,
 `inference_messages()` inserts caller-selected training prompt/completion pairs
 before the validation question. Only pass examples from `train` as
 demonstrations. The helper omits the query reference and rejects a demonstration
-with the same ID as the query. This format does not tokenize examples, mask
-training tokens, parse generated text, or run the model yet.
+with the same ID as the query. This exporter does not tokenize examples or mask
+training tokens. The separate baseline runner uses the checkpoint's chat template.
 
 On 2026-11-17, Codex spot-checked the first five rows in each seeded split:
 train `12759`, `18536`, `5484`, `20797`, `18103`; validation `11481`, `6889`,
@@ -328,9 +337,10 @@ alone does not determine the pulling force, and the reference assumes a
 starting condition omitted from the question. Validation record `11584` uses
 implausible distances for ducks over the stated period, although the relative
 speed calculation works. Several reference explanations run longer than the
-requested brief response. Findings are recorded here without changing the
-manifest or rewriting labels. Resolve flagged data-quality issues before
-training. This small spot check does not certify all 600 records or their hints.
+requested brief response. The two ID-specific findings are recorded as sampling
+exclusions with reasons in `configs/smoke.toml`; source labels are unchanged. The
+spot check does not certify all 600 records or their hints. Longer explanations
+remain in the source and are a limitation for any future completion token budget.
 
 ## Model
 

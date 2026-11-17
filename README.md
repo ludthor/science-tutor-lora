@@ -13,9 +13,9 @@ output is a selected answer and a short explanation.
 
 **Status:** data preparation. The pipeline verifies ScienceQA, audits eligibility
 and duplicates, quarantines ambiguous records, and builds reproducible samples
-and chat prompts. An initial quality spot check is complete. Baseline inference,
-training, and evaluation are pending. No model has been trained and no
-performance results are claimed.
+and chat prompts. Two examples flagged in the initial quality spot check are
+excluded. The zero-shot and few-shot baselines run on validation. LoRA training
+and final held-out evaluation are pending.
 
 ## Quick start
 
@@ -127,7 +127,8 @@ uv run science-tutor build-samples configs/smoke.toml
 The manifest at `data/processed/samples.json` records 500 training IDs, 100
 validation IDs, 794 reserved test IDs, and the reasons for withholding ten
 conflicting records. It contains IDs and provenance only. Seed 42 and the pinned
-source make the selection reproducible. [Sampling policy](docs/data.md#sampling-policy-v1)
+source and documented quality exclusions make the selection reproducible.
+[Sampling policy](docs/data.md#sampling-policy)
 
 Build the training prompts/completions and validation prompts/references:
 
@@ -140,6 +141,24 @@ the same sample selection. A model receives only the chat `prompt` messages
 for a zero-shot query. Training `completion` messages and validation `reference`
 objects are stored separately in each row. Reserved test records are not
 exported. See the [prompt format and spot check](docs/data.md#prompt-and-quality-review).
+
+Run the validation baselines on one local machine or a CUDA notebook:
+
+```bash
+uv sync --locked --extra inference
+uv run --locked --extra inference science-tutor run-baselines configs/smoke.toml
+```
+
+The first run downloads the pinned model into ignored `data/huggingface/hub/`
+(about 3.2 GiB for the weights). Device selection prefers CUDA, then Apple MPS,
+then CPU. For a quick check use `--limit 8 --output outputs/baselines-smoke.json`.
+Both prompting conditions score the same validation IDs. Few-shot uses the first
+two seed-ranked training examples. Invalid responses count as incorrect. The
+default output, `outputs/baselines.json`, keeps per-record outputs and scores
+local. See [baseline method and results](docs/baselines.md).
+
+On the 100-question validation run, zero-shot scored **57%** and two-shot
+**63%**. Zero-shot produced no invalid responses; two-shot produced four.
 
 ## Experiment milestones
 

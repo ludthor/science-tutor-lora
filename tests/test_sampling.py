@@ -12,7 +12,10 @@ from science_tutor.sampling import build_sample_manifest
 
 @pytest.fixture
 def config() -> ExperimentConfig:
-    return load_config(Path(__file__).resolve().parents[1] / "configs" / "smoke.toml")
+    config = load_config(Path(__file__).resolve().parents[1] / "configs" / "smoke.toml")
+    return config.model_copy(
+        update={"dataset": config.dataset.model_copy(update={"quality_exclusions": {}})}
+    )
 
 
 @pytest.fixture
@@ -158,6 +161,7 @@ def test_ineligible_records_never_enter_samples_or_reserve(
     assert manifest["by_split"]["train"] == {
         "eligible": 1,
         "quarantined": 0,
+        "quality_excluded": 0,
         "available": 1,
         "sampled": 1,
         "reserved": 0,
@@ -172,3 +176,34 @@ def test_empty_required_split_fails_instead_of_borrowing_from_another_split(
 
     with pytest.raises(ValueError, match=f"No usable {split} records"):
         build_sample_manifest(records, config)
+
+
+def test_documented_exclusion_is_backfilled_without_changing_test_reserve(
+    records: dict[str, ScienceQARecord], config: ExperimentConfig
+) -> None:
+    records["backfill"] = records["train"].model_copy(update={"question": "Why does ice melt?"})
+    config = config.model_copy(
+        update={
+            "dataset": config.dataset.model_copy(
+                update={"quality_exclusions": {"train": "Ambiguous"}}
+            )
+        }
+    )
+
+    manifest = build_sample_manifest(records, config)
+
+    assert manifest["samples"]["train"] == ["backfill"]
+    assert manifest["by_split"]["train"]["quality_excluded"] == 1
+    assert manifest["by_split"]["train"]["quarantined"] == 0
+    assert manifest["reserved_test_ids"] == ["test"]
+    assert manifest["quality_exclusions"] == {"train": "Ambiguous"}
+
+
+@pytest.mark.parametrize("record_id", ["missing", "test"])
+def test_quality_exclusions_cannot_silently_change_test_or_reference_missing_ids(
+    records: dict[str, ScienceQARecord], config: ExperimentConfig, record_id: str
+) -> None:
+    settings = config.dataset.model_copy(update={"quality_exclusions": {record_id: "Flagged"}})
+
+    with pytest.raises(ValueError, match="usable train/val record"):
+        build_sample_manifest(records, config.model_copy(update={"dataset": settings}))

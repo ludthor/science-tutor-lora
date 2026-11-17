@@ -1,6 +1,7 @@
-"""A lightweight command line interface; model libraries are added with training."""
+"""Command line entry points for data preparation and model experiments."""
 
 import argparse
+import hashlib
 import json
 import platform
 import sys
@@ -9,10 +10,12 @@ from collections import Counter
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
+from time import perf_counter
 
 from pydantic import ValidationError
 
-from science_tutor.config import load_config
+from science_tutor.baseline import BASELINE_VERSION, Mode, compare_prompts
+from science_tutor.config import ExperimentConfig, load_config
 from science_tutor.data import DatasetValidationError, load_scienceqa
 from science_tutor.download import SourceDownloadError, fetch_scienceqa
 from science_tutor.duplicates import write_duplicate_report
@@ -21,9 +24,83 @@ from science_tutor.eligibility import (
     assess_eligibility,
     write_eligibility_report,
 )
+from science_tutor.inference import load_generator
 from science_tutor.prompts import build_prompt_dataset
 from science_tutor.reports import write_json_report
 from science_tutor.sampling import build_sample_manifest
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def _run_baselines(args: argparse.Namespace, config: ExperimentConfig) -> int:
+    try:
+        artifact = fetch_scienceqa(config.dataset, args.data_dir)
+        if args.output.resolve() in {
+            args.config.resolve(),
+            artifact.path.resolve(),
+            artifact.path.with_name("source.json").resolve(),
+        }:
+            raise ValueError("Report output must not overwrite configuration or source files.")
+        dataset = build_prompt_dataset(load_scienceqa(artifact.path), config)
+        if args.shots > len(dataset["train"]):
+            raise ValueError("Few-shot count exceeds available training rows.")
+        print(f"Loading {config.model.model_id} ({args.device})", file=sys.stderr)
+        generate, runtime = load_generator(
+            config.model, args.device, args.max_new_tokens, args.model_cache
+        )
+
+        def progress(mode: Mode, done: int, total: int) -> None:
+            print(f"{mode}: {done}/{total}", file=sys.stderr)
+
+        start = perf_counter()
+        result = compare_prompts(
+            dataset,
+            generate,
+            shots=args.shots,
+            limit=args.limit,
+            batch_size=args.batch_size,
+            progress=progress,
+        )
+        elapsed = round(perf_counter() - start, 3)
+        report = {
+            "baseline_version": BASELINE_VERSION,
+            "prompt_format_version": dataset["format_version"],
+            "prompt_dataset_sha256": hashlib.sha256(
+                json.dumps(dataset, sort_keys=True, ensure_ascii=False).encode()
+            ).hexdigest(),
+            "source": dataset["source"],
+            "sampling_policy": dataset["sampling_policy"],
+            "seed": dataset["seed"],
+            "quality_exclusions": dataset["quality_exclusions"],
+            "model": config.model.model_dump(),
+            "generation": {
+                "do_sample": False,
+                "max_new_tokens": args.max_new_tokens,
+                "batch_size": args.batch_size,
+            },
+            "runtime": {
+                "python": platform.python_version(),
+                "platform": platform.platform(),
+                **runtime,
+            },
+            "inference_seconds": elapsed,
+            **result,
+        }
+        write_json_report(args.output, report)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"Cannot run baselines: {exc}", file=sys.stderr)
+        return 2
+    brief = {
+        key: {metric: value for metric, value in row.items() if metric != "predictions"}
+        for key, row in (("zero_shot", result["zero_shot"]), ("few_shot", result["few_shot"]))
+    }
+    print(json.dumps({"output": str(args.output), "inference_seconds": elapsed, **brief}, indent=2))
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -62,6 +139,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     prompts.add_argument("config", type=Path)
     prompts.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     prompts.add_argument("--output", type=Path, default=Path("data/processed/prompts.json"))
+    baselines = commands.add_parser(
+        "run-baselines", help="Compare zero-shot and few-shot accuracy."
+    )
+    baselines.add_argument("config", type=Path)
+    baselines.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    baselines.add_argument("--model-cache", type=Path, default=Path("data/huggingface/hub"))
+    baselines.add_argument("--output", type=Path, default=Path("outputs/baselines.json"))
+    baselines.add_argument("--device", choices=("auto", "cpu", "mps", "cuda"), default="auto")
+    baselines.add_argument("--shots", type=_positive_int, default=2)
+    baselines.add_argument("--batch-size", type=_positive_int, default=8)
+    baselines.add_argument("--max-new-tokens", type=_positive_int, default=128)
+    baselines.add_argument(
+        "--limit", type=_positive_int, help="Score only the first N validation IDs."
+    )
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -73,7 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "system": platform.system(),
                     "machine": platform.machine(),
                     "executable": sys.executable,
-                    "accelerator": "not probed; training dependencies are not installed by default",
+                    "accelerator": "not probed; model dependencies are not installed by default",
                 },
                 indent=2,
             )
@@ -103,6 +194,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, ValidationError) as exc:
         print(f"Invalid experiment configuration: {exc}", file=sys.stderr)
         return 2
+
+    if args.command == "run-baselines":
+        return _run_baselines(args, config)
 
     if args.command == "fetch-data":
         try:
